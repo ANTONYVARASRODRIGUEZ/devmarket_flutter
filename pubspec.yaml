@@ -12,7 +12,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # 🟢 CORREGIDO: Ahora está libre, alineado a la izquierda y en su lugar correcto
   overlay_support: ^2.1.0  
 
   # Autenticación y Cuentas
@@ -41,11 +40,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
 
-  # Carpetas de imágenes locales cargadas de forma masiva y segura
   assets:
     - assets/logos/
