@@ -1,351 +1,193 @@
 // lib/screens/my_orders_screen.dart
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../models/order.dart';
+
+// 🟢 Importaciones corregidas para resolver los "undefined"
+import 'package:devmarket_app/data/services/api_service.dart';
+import 'package:devmarket_app/models/message.dart'; // Mapea ChatModel
+import 'package:devmarket_app/screens/chat_room_screen.dart'; // Mapea ChatRoomScreen
+import 'package:devmarket_app/widgets/custom_header.dart'; // 🚀 Importación del Header Reutilizable
 
 class MyOrdersScreen extends StatefulWidget {
-  // 📥 RECIBIMOS LOS PARÁMETROS GLOBALES DESDE MAIN.DART
-  final bool isFreelancer;
-  final ValueChanged<bool> onRoleChanged;
-
-  const MyOrdersScreen({
-    super.key,
-    required this.isFreelancer,
-    required this.onRoleChanged,
-  });
+  const MyOrdersScreen({super.key});
 
   @override
   State<MyOrdersScreen> createState() => _MyOrdersScreenState();
 }
 
 class _MyOrdersScreenState extends State<MyOrdersScreen> {
-  // ❌ Se eliminó la variable local "isFreelancer = false" para evitar conflictos
+  final ApiService _apiService = ApiService();
+
+  List<dynamic> _orders = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
   
-  final List<OrderModel> _orders = [
-    OrderModel(
-      title: 'App Móvil React Native',
-      developerName: 'Ana R.',
-      developerAvatarUrl: 'https://i.pravatar.cc/150?u=ana',
-      deliveryDate: '30 may',
-      price: 1200,
-      progress: 0.0,
-      status: 'Pendiente',
-    ),
-    OrderModel(
-      title: 'Landing Page Premium',
-      developerName: 'Miguel S.',
-      developerAvatarUrl: 'https://i.pravatar.cc/150?u=miguel',
-      deliveryDate: '20 may',
-      price: 450,
-      progress: 1.0,
-      status: 'Entregado',
-    ),
-  ];
+  // 🟢 Guardaremos tu ID real dinámicamente sin IDs fijos
+  String myUserId = ''; 
 
-  // 1. FUNCIÓN: MODAL PARA CALIFICAR Y APROBAR
-  void _showRateAndApproveBottomSheet(BuildContext context, OrderModel order) {
-    int selectedRating = 0;
+  // 🔘 Estado para controlar la pestaña activa igual que en la Web
+  String _activeTab = 'TODOS'; 
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.7),
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-              child: Container(
-                padding: EdgeInsets.only(
-                  left: 24, right: 24, top: 20,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-                ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF121214),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Calificar Proyecto',
-                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.grey),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C1E),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            order.title,
-                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Por ${order.developerName}',
-                            style: const TextStyle(color: Colors.grey, fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    const Text('Tu calificacion', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(5, (index) {
-                        return GestureDetector(
-                          onTap: () => setModalState(() => selectedRating = index + 1),
-                          child: Icon(
-                            Icons.star,
-                            size: 48,
-                            color: index < selectedRating ? Colors.amber : Colors.grey[800],
-                          ),
-                        );
-                      }),
-                    ),
-                    const SizedBox(height: 24),
-
-                    const Text('Comentario (opcional)', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                    const SizedBox(height: 12),
-                    TextField(
-                      maxLines: 4,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Comparte tu experiencia...',
-                        hintStyle: TextStyle(color: Colors.grey[600]),
-                        filled: true,
-                        fillColor: const Color(0xFF1C1C1E),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: Colors.grey[800]!),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: Colors.grey[800]!),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: selectedRating == 0 ? null : () {
-                          setState(() => _orders.remove(order));
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          disabledBackgroundColor: const Color(0xFF065F46),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                        child: const Text('Enviar y Aprobar Proyecto', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-        );
-      },
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentUserId(); // 🟢 Cargamos el ID real desde el storage del teléfono
+    _fetchOrders();
   }
 
-  // 2. FUNCIÓN: MODAL DE CANCELACIÓN / RECHAZO (CON BLUR)
-  void _showCancelBottomSheet(BuildContext context, OrderModel order) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.7),
-      isScrollControlled: true,
-      builder: (context) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-            decoration: const BoxDecoration(
-              color: Color(0xFF121214),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Cancelar Proyecto', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                    IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () => Navigator.pop(context)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7F1D1D).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF7F1D1D)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Color(0xFFEF4444)),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Esta accion no se puede deshacer', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
-                            Text('El proyecto será cancelado y no podrás recuperarlo.', style: TextStyle(color: Colors.grey, fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(16)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(order.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      Text('\$${order.price.toInt()}', style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white24),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: const Text('Volver', style: TextStyle(color: Colors.white)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          setState(() => _orders.remove(order));
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFEF4444),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: const Text('Cancelar Proyecto', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  // 🟢 Método asíncrono para leer el ID real que viene del Login
+  void _loadCurrentUserId() async {
+    final id = await _apiService.getUserId();
+    if (mounted && id != null) {
+      setState(() {
+        myUserId = id;
+      });
+    }
+  }
+
+  Future<void> _fetchOrders() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = '';
+      });
+
+      final List<dynamic> fetchedOrders = await _apiService.getMisPedidos();
+
+      setState(() {
+        _orders = fetchedOrders;
+        _isLoading = false;
+      });
+    } catch (e) {
+      // 🟢 Corregido avoid_print usando debugPrint
+      debugPrint("🚨 DETALLE DEL ERROR DE PEDIDOS: $e");
+      setState(() {
+        _errorMessage = 'Error al conectar con el servidor';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 🧭 Filtrado de pedidos IDÉNTICO a la lógica de tu Next.js (Sincronizado con PENDING)
+  List<dynamic> get _filteredOrders {
+    if (_activeTab == 'TODOS') return _orders;
+    if (_activeTab == 'ACTIVOS') {
+      return _orders.where((order) {
+        final status = order['status']?.toString() ?? '';
+        return status == 'PENDING' || status == 'IN_PROGRESS';
+      }).toList();
+    }
+    if (_activeTab == 'COMPLETADOS') {
+      return _orders.where((order) {
+        return (order['status']?.toString() ?? '') == 'COMPLETED';
+      }).toList();
+    }
+    return _orders;
+  }
+
+  // Conteo dinámico para las insignias de los botones (Sincronizado con PENDING)
+  int _countOrdersByStatus(String type) {
+    if (type == 'TODOS') return _orders.length;
+    if (type == 'ACTIVOS') {
+      return _orders.where((o) {
+        final s = o['status']?.toString() ?? '';
+        return s == 'PENDING' || s == 'IN_PROGRESS';
+      }).length;
+    }
+    if (type == 'COMPLETADOS') {
+      return _orders.where((o) => (o['status']?.toString() ?? '') == 'COMPLETED').length;
+    }
+    return 0;
+  }
+
+  String _calculateDeliveryDate(String createdAtStr, int deliveryDays) {
+    try {
+      DateTime createdAt = DateTime.parse(createdAtStr);
+      DateTime deliveryDate = createdAt.add(Duration(days: deliveryDays));
+      
+      final months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+      return '${deliveryDate.day.toString().padLeft(2, '0')} ${months[deliveryDate.month - 1]} ${deliveryDate.year}';
+    } catch (_) {
+      return 'Fecha indefinida';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    const accentColor = Color(0xFF10B981);
-    const cardColor = Color(0xFF121214);
+    const accentColor = Color(0xFF00E676); 
+    const cardColor = Color(0xFF0C0C0E);   
 
     return Scaffold(
-      backgroundColor: const Color(0xFF080808),
+      backgroundColor: const Color(0xFF080808), 
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(color: accentColor, shape: BoxShape.circle),
-                        child: const Text('DM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('DevMarket', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      // 🔄 REEMPLAZADO CON WIDGET.ISFREELANCER PARA LEER EL ESTADO GLOBAL
-                      Text('Cliente', style: TextStyle(color: widget.isFreelancer ? Colors.grey : accentColor, fontSize: 12)),
-                      Switch(
-                        value: widget.isFreelancer,
-                        activeThumbColor: accentColor,
-                        activeTrackColor: accentColor.withValues(alpha: 0.3),
-                        onChanged: widget.onRoleChanged, // 🎯 SE LLAMA A LA FUNCIÓN DEL MAIN.DART
-                      ),
-                      Text('Freelancer', style: TextStyle(color: widget.isFreelancer ? accentColor : Colors.grey, fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Mis Pedidos', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 4),
-                    Text('Seguimiento de servicios', style: TextStyle(color: Colors.grey, fontSize: 16)),
-                  ],
-                ),
-              ),
+            // 🚀 INTEGRACIÓN DEL HEADER NUEVO REUTILIZABLE
+            const CustomHeader(
+              title: 'Mis pedidos',
+              subtitle: 'Gestiona tus proyectos activos y revisa las entregas finales.',
             ),
             const SizedBox(height: 16),
 
+            // 🗂️ TABS DE FILTRADO
+            if (!_isLoading && _errorMessage.isEmpty)
+              Container(
+                height: 48,
+                margin: const EdgeInsets.only(bottom: 16),
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  children: [
+                    _buildTabButton('TODOS', accentColor),
+                    const SizedBox(width: 12),
+                    _buildTabButton('ACTIVOS', accentColor),
+                    const SizedBox(width: 12),
+                    _buildTabButton('COMPLETADOS', accentColor),
+                  ],
+                ),
+              ),
+
+            // 🔄 RENDERIZADO CONDICIONAL
             Expanded(
-              child: _orders.isEmpty
-                  ? const Center(child: Text('No tienes pedidos activos', style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      itemCount: _orders.length,
-                      itemBuilder: (context, index) {
-                        return _buildOrderCard(context, _orders[index], accentColor, cardColor);
-                      },
-                    ),
+              child: _isLoading
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(accentColor)),
+                          SizedBox(height: 16),
+                          Text('Cargando tus pedidos...', style: TextStyle(color: Color(0xFF71717A), fontSize: 14)),
+                        ],
+                      ),
+                    )
+                  : _errorMessage.isNotEmpty
+                      ? Center(
+                          child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent)),
+                        )
+                      : _filteredOrders.isEmpty
+                          ? const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.layers_clear_outlined, size: 64, color: Color(0xFF27272A)),
+                                  SizedBox(height: 16),
+                                  Text('No hay pedidos aquí', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                  Text('Aún no tienes proyectos en esta categoría.', style: TextStyle(color: Color(0xFF71717A), fontSize: 14)),
+                                ],
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _fetchOrders,
+                              color: accentColor,
+                              backgroundColor: const Color(0xFF121214),
+                              child: ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                itemCount: _filteredOrders.length,
+                                itemBuilder: (context, index) {
+                                  return _buildOrderCard(context, _filteredOrders[index], accentColor, cardColor);
+                                },
+                              ),
+                            ),
             ),
           ],
         ),
@@ -353,103 +195,246 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     );
   }
 
-  Widget _buildOrderCard(BuildContext context, OrderModel order, Color accentColor, Color cardColor) {
+  Widget _buildTabButton(String tabName, Color accentColor) {
+    final bool isActive = _activeTab == tabName;
+    return InkWell(
+      onTap: () => setState(() => _activeTab = tabName),
+      borderRadius: BorderRadius.circular(24),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: isActive ? accentColor : const Color(0xFF121214),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: isActive ? accentColor : const Color(0xFF27272A)),
+          boxShadow: isActive 
+              ? [BoxShadow(color: accentColor.withValues(alpha: 0.3), blurRadius: 15, spreadRadius: 1)] 
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          children: [
+            Text(
+              tabName,
+              style: TextStyle(
+                color: isActive ? Colors.black : const Color(0xFF71717A),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: isActive ? Colors.black.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.3), 
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${_countOrdersByStatus(tabName)}',
+                style: TextStyle(
+                  color: isActive ? Colors.black : const Color(0xFF71717A),
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderCard(BuildContext context, dynamic order, Color accentColor, Color cardColor) {
+    final String status = order['status']?.toString() ?? '';
+    final service = order['service'] ?? {};
+    final seller = order['seller'] ?? {};
+
+    final String title = service['title']?.toString() ?? 'Servicio Personalizado';
+    final String freelancerName = seller['name']?.toString() ?? '@usuario';
+    final String avatarUrl = seller['avatar']?.toString() ?? '';
+    final int deliveryDays = int.tryParse(service['deliveryDays']?.toString() ?? '') ?? 7;
+    final String createdAt = order['createdAt']?.toString() ?? DateTime.now().toIso8601String();
+    final double price = double.tryParse(order['price']?.toString() ?? '') ?? 0.0;
+
+    // 🔄 Sincronización del progreso dinámico real desde la Base de Datos
+    int progressPercent = int.tryParse(order['progress']?.toString() ?? '') ?? 0;
+    
+    // Fallback por si la base de datos está vacía en progreso pero tiene estados consistentes
+    if (progressPercent == 0) {
+      if (status == 'IN_PROGRESS') progressPercent = 60; // Mantener consistencia con el fallback de Next.js
+      if (status == 'COMPLETED') progressPercent = 100;
+    }
+
+    double progressValue = progressPercent / 100.0;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(24)),
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardColor, 
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF27272A).withValues(alpha: 0.5)), 
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start, 
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(radius: 20, backgroundImage: NetworkImage(order.developerAvatarUrl)),
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: const Color(0xFF121214),
+                backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl.isEmpty 
+                    ? Text(
+                        freelancerName.isNotEmpty ? freelancerName.substring(0, 1).toUpperCase() : 'U', 
+                        style: TextStyle(color: accentColor),
+                      )
+                    : null,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(order.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text(order.developerName, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    _buildStatusTag(status),
+                    const SizedBox(height: 6),
+                    Text(
+                      title, 
+                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text('Freelancer: $freelancerName', style: const TextStyle(color: Color(0xFF71717A), fontSize: 13)),
                   ],
                 ),
               ),
-              _buildStatusTag(order.status),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+          
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Progreso', style: TextStyle(color: Colors.grey, fontSize: 13)),
-              Text('${(order.progress * 100).toInt()}%', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+              const Text('PROGRESO', style: TextStyle(color: Color(0xFF71717A), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+              Text('$progressPercent%', style: TextStyle(color: accentColor, fontSize: 12, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 8),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              value: order.progress,
-              backgroundColor: const Color(0xFF2C2C2E),
+              value: progressValue,
+              backgroundColor: const Color(0xFF121214),
               valueColor: AlwaysStoppedAnimation<Color>(accentColor),
-              minHeight: 6,
+              minHeight: 8,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+          
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Entrega: ${order.deliveryDate}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
-              Text('\$${order.price.toInt()}', style: TextStyle(color: accentColor, fontSize: 16, fontWeight: FontWeight.bold)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('ENTREGA EST.', style: TextStyle(color: Color(0xFF71717A), fontSize: 10, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(_calculateDeliveryDate(createdAt, deliveryDays), style: const TextStyle(color: Color(0xFFE4E4E7), fontSize: 14, fontWeight: FontWeight.w500)), 
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text('INVERSION', style: TextStyle(color: Color(0xFF71717A), fontSize: 10, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text('S/ ${price.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)), 
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 16),
           
-          if (order.status == 'Pendiente' || order.status == 'En Proceso')
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => _showCancelBottomSheet(context, order),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF7F1D1D)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final String freelancerId = seller['id']?.toString() ?? '';
+
+                if (freelancerId.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No se pudo encontrar el ID del freelancer')),
+                  );
+                  return;
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Sincronizando chat de trabajo...'), 
+                    duration: Duration(milliseconds: 500)
+                  ),
+                );
+
+                String conversationId = '';
+
+                try {
+                  final List<dynamic> activosChats = await _apiService.getChats(); 
+
+                  final chatExistente = activosChats.firstWhere(
+                    (json) {
+                      final bool isParticipantAContact = json['participantAId']?.toString() != myUserId;
+                      final dynamic targetParticipant = isParticipantAContact ? json['participantA'] : json['participantB'];
+                      final String currentFreelancerId = targetParticipant != null ? (targetParticipant['id']?.toString() ?? '') : '';
+                      return currentFreelancerId == freelancerId;
+                    },
+                    orElse: () => null,
+                  );
+
+                  if (chatExistente != null) {
+                    conversationId = chatExistente['id']?.toString() ?? '';
+                  }
+                } catch (e) {
+                  debugPrint("🧠 Nota: Entrando en modo directo sin historial: $e");
+                }
+
+                if (conversationId.isEmpty) {
+                  conversationId = order['conversationId']?.toString() ?? '';
+                }
+
+                if (!context.mounted) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ChatRoomScreen(
+                      chat: ChatModel(
+                        id: conversationId, 
+                        name: freelancerName,
+                        lastMessage: '',
+                        avatarUrl: avatarUrl,
+                        time: '',
+                        unreadCount: 0,
+                      ),
+                      participantId: freelancerId, 
+                      myUserId: myUserId,          
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Abrir Chat de Trabajo', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF121214),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: Color(0xFF27272A)),
                 ),
-                child: const Text('Cancelar Pedido', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                elevation: 0,
               ),
-            )
-          else if (order.status == 'Entregado')
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showRateAndApproveBottomSheet(context, order),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Aprobar', style: TextStyle(fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accentColor,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _showCancelBottomSheet(context, order),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF7F1D1D)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text('Rechazar', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
             ),
+          ),
         ],
       ),
     );
@@ -458,16 +443,53 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
   Widget _buildStatusTag(String status) {
     Color bgColor;
     Color textColor;
+    String textLabel;
+
     switch (status) {
-      case 'Pendiente': bgColor = const Color(0xFF78350F); textColor = const Color(0xFFFBBF24); break;
-      case 'En Proceso': bgColor = const Color(0xFF1E3A8A); textColor = const Color(0xFF60A5FA); break;
-      case 'Entregado': bgColor = const Color(0xFF4C1D95); textColor = const Color(0xFFA78BFA); break;
-      default: bgColor = const Color(0xFF1A1A1A); textColor = Colors.white;
+      case 'PENDING': // 🟢 Cambiado PAID por PENDING (Ámbar - Por iniciar)
+        bgColor = const Color(0xFFF59E0B).withValues(alpha: 0.1); 
+        textColor = const Color(0xFFFBBF24);
+        textLabel = 'POR INICIAR';
+        break;
+      case 'IN_PROGRESS': // 🔵 En proceso pasa a ser Azul para combinar con Next.js
+        bgColor = const Color(0xFF3B82F6).withValues(alpha: 0.1); 
+        textColor = const Color(0xFF60A5FA);
+        textLabel = 'EN PROCESO';
+        break;
+      case 'COMPLETED': // 🟢 Completado se mantiene verde
+        bgColor = const Color(0xFF10B981).withValues(alpha: 0.1); 
+        textColor = const Color(0xFF34D399);
+        textLabel = 'COMPLETADO';
+        break;
+      case 'CANCELLED': // 🔴 Manejo del estado Cancelado
+        bgColor = const Color(0xFFEF4444).withValues(alpha: 0.1); 
+        textColor = const Color(0xFFF87171);
+        textLabel = 'CANCELADO';
+        break;
+      default:
+        bgColor = const Color(0xFF27272A);
+        textColor = Colors.white;
+        textLabel = 'DESCONOCIDO';
     }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
-      child: Text(status, style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: textColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            textLabel,
+            style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+          ),
+        ],
+      ),
     );
   }
 }

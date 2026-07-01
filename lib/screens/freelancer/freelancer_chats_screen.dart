@@ -1,51 +1,55 @@
 // lib/screens/freelancer/freelancer_chats_screen.dart
 import 'package:flutter/material.dart';
-// 🚀 IMPORTACIÓN LOCAL IMPECABLE: Al estar en la misma carpeta, no hay errores de rutas
+import '../../data/services/api_service.dart'; 
 import 'chat_detail_screen.dart';
+import 'package:devmarket_app/widgets/custom_header.dart'; 
 
 class FreelancerChatsScreen extends StatefulWidget {
-  final bool isFreelancer;
-  final ValueChanged<bool> onRoleChanged;
-
-  const FreelancerChatsScreen({
-    super.key,
-    required this.isFreelancer,
-    required this.onRoleChanged,
-  });
+  const FreelancerChatsScreen({super.key});
 
   @override
   State<FreelancerChatsScreen> createState() => _FreelancerChatsScreenState();
 }
 
 class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
+  final ApiService _apiService = ApiService();
+
   static const bgDark = Color(0xFF080808);
   static const cardColor = Color(0xFF121214);
-  static const accentColor = Color(0xFF10B981);
+  static const accentColor = Color(0xFF00E676); 
   static const textMuted = Color(0xFF71717A);
 
-  final List<Map<String, dynamic>> _chats = [
-    {
-      'name': 'TechCorp Inc.',
-      'message': '¿Cómo va el avance del proyecto?',
-      'time': '11:45',
-      'unreadCount': 1,
-      'avatarUrl': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-    },
-    {
-      'name': 'FoodRush',
-      'message': 'Te envío los requisitos actualizados',
-      'time': '10:00',
-      'unreadCount': 3,
-      'avatarUrl': 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
-    },
-    {
-      'name': 'Warehouse Pro',
-      'message': 'Excelente trabajo, gracias!',
-      'time': 'Ayer',
-      'unreadCount': 0,
-      'avatarUrl': 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?q=80&w=200&auto=format&fit=crop',
-    },
-  ];
+  bool _isLoading = true;
+  List<dynamic> _conversations = [];
+  String? _currentUserId; 
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final userId = await _apiService.getUserId();
+      final chats = await _apiService.getChats();
+      
+      if (!mounted) return;
+      setState(() {
+        _currentUserId = userId;
+        _conversations = chats;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al conectar con el servidor: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,73 +59,32 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: accentColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Text(
-                          'DM',
-                          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'DevMarket',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Text('Cliente', style: TextStyle(color: widget.isFreelancer ? Colors.grey : accentColor, fontSize: 12)),
-                      Switch(
-                        value: widget.isFreelancer,
-                        activeThumbColor: accentColor,
-                        activeTrackColor: accentColor.withAlpha((0.3 * 255).round()),
-                        onChanged: widget.onRoleChanged,
-                      ),
-                      Text('Freelancer', style: TextStyle(color: widget.isFreelancer ? accentColor : Colors.grey, fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
+            const CustomHeader(
+              title: 'Mensajes',
+              subtitle: 'Tus conversaciones activas',
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Mensajes',
-                    style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Tus conversaciones activas',
-                    style: TextStyle(color: textMuted, fontSize: 16),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              ),
-            ),
+            
+            const SizedBox(height: 10), 
+
+            // --- LISTA DE CHATS ---
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                itemCount: _chats.length,
-                itemBuilder: (context, index) {
-                  final chat = _chats[index];
-                  return _buildChatCard(chat);
-                },
-              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(accentColor)))
+                  : _conversations.isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                          color: accentColor,
+                          backgroundColor: cardColor,
+                          onRefresh: _fetchData,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            itemCount: _conversations.length,
+                            itemBuilder: (context, index) {
+                              final chat = _conversations[index];
+                              return _buildChatCard(chat);
+                            },
+                          ),
+                        ),
             ),
           ],
         ),
@@ -129,8 +92,52 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
     );
   }
 
-  Widget _buildChatCard(Map<String, dynamic> chat) {
-    final bool hasUnread = chat['unreadCount'] > 0;
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.forum_outlined, size: 64, color: textMuted.withAlpha(100)),
+          const SizedBox(height: 16),
+          const Text(
+            'No hay conversaciones',
+            style: TextStyle(color: textMuted, fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatCard(dynamic chat) {
+    // 🟢 IDENTIFICACIÓN DE PARTICIPANTE ALINEADA CON PRISMA SCHEMA
+    final String currentId = _currentUserId?.toString().trim() ?? '';
+    final String participantAId = chat['participantAId']?.toString().trim() ?? '';
+    
+    // Si participantAId no es el mío, significa que el cliente es la relación participantA.
+    // En caso contrario, el cliente es la relación participantB.
+    final bool isParticipantATheOther = participantAId != currentId;
+    final dynamic otherUser = isParticipantATheOther ? chat['participantA'] : chat['participantB'];
+
+    final String contactName = otherUser?['name'] ?? 'Usuario DevMarket';
+    final String? avatarUrl = otherUser?['avatar'];
+    
+    final String lastMessage = chat['messages'] != null && (chat['messages'] as List).isNotEmpty
+        ? (chat['messages'][0]['content'].toString().contains('res.cloudinary.com') 
+            ? '📎 Archivo adjunto' 
+            : chat['messages'][0]['content'])
+        : 'Sin mensajes en la conversación';
+        
+    final int unreadCount = chat['unreadCount'] ?? 0;
+    final bool hasUnread = unreadCount > 0;
+    
+    String timeStr = '--:--';
+    if (chat['updatedAt'] != null) {
+      final parsedDate = DateTime.tryParse(chat['updatedAt']);
+      if (parsedDate != null) {
+        final localDate = parsedDate.toLocal();
+        timeStr = "${localDate.hour.toString().padLeft(2, '0')}:${localDate.minute.toString().padLeft(2, '0')}";
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -141,29 +148,38 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         onTap: () {
+          final String receiverId = otherUser?['id']?.toString() ?? '';
+
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ChatDetailScreen(
-                name: chat['name'],
-                avatarUrl: chat['avatarUrl'],
+                chatId: chat['id'].toString(), 
+                name: contactName,
+                avatarUrl: avatarUrl ?? '', 
+                receiverId: receiverId, 
               ),
             ),
-          );
+          ).then((_) {
+            if (mounted) _fetchData(); 
+          });
         },
         leading: Stack(
+          clipBehavior: Clip.none,
           children: [
             CircleAvatar(
               radius: 26,
               backgroundColor: const Color(0xFF1C1C1E),
-              backgroundImage: NetworkImage(chat['avatarUrl']),
+              backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                  ? NetworkImage(avatarUrl) 
+                  : NetworkImage("https://ui-avatars.com/api/?name=$contactName&background=0a0a0a&color=00e676") as ImageProvider,
             ),
             if (hasUnread)
               Positioned(
-                top: 0,
-                right: 0,
+                top: -2,
+                right: -2,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(4),
                   decoration: const BoxDecoration(
                     color: accentColor,
                     shape: BoxShape.circle,
@@ -172,14 +188,16 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
                     minWidth: 20,
                     minHeight: 20,
                   ),
-                  child: Text(
-                    '${chat['unreadCount']}',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                  child: Center(
+                    child: Text(
+                      '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
@@ -188,16 +206,21 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              chat['name'],
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                contactName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
+            const SizedBox(width: 8),
             Text(
-              chat['time'],
+              timeStr,
               style: const TextStyle(
                 color: textMuted,
                 fontSize: 13,
@@ -208,12 +231,13 @@ class _FreelancerChatsScreenState extends State<FreelancerChatsScreen> {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4.0),
           child: Text(
-            chat['message'],
+            lastMessage,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: hasUnread ? Colors.white70 : textMuted,
               fontSize: 14,
+              fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ),

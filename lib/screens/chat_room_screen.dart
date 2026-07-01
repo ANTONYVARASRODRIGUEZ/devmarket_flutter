@@ -1,11 +1,20 @@
 // lib/screens/chat_room_screen.dart
 import 'package:flutter/material.dart';
-import '../models/chat.dart';
+import '../models/message.dart';
+import 'package:devmarket_app/data/services/socket_service.dart';
+import 'package:devmarket_app/data/services/api_service.dart'; 
 
 class ChatRoomScreen extends StatefulWidget {
   final ChatModel chat;
+  final String? participantId; 
+  final String myUserId;       
 
-  const ChatRoomScreen({super.key, required this.chat});
+  const ChatRoomScreen({
+    super.key, 
+    required this.chat, 
+    this.participantId,
+    required this.myUserId, 
+  });
 
   @override
   State<ChatRoomScreen> createState() => _ChatRoomScreenState();
@@ -13,188 +22,186 @@ class ChatRoomScreen extends StatefulWidget {
 
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final SocketService _socketService = SocketService();
+  final ApiService _apiService = ApiService(); 
+  
+  final List<Map<String, dynamic>> _messages = [];
+  bool _isOtherUserTyping = false;
+  bool _isLoadingHistory = true; 
 
-  // Lista de mensajes del chat
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'text': 'Hola! Acabo de revisar los requisitos del proyecto.',
-      'time': '10:28',
-      'isMe': false,
-    },
-    {
-      'text': 'Perfecto, ¿tienes alguna duda?',
-      'time': '10:29',
-      'isMe': true,
-    },
-    {
-      'text': 'Acabo de subir el último commit con los cambios solicitados.',
-      'time': '10:30',
-      'isMe': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initSocketListeners();
+    _loadMessageHistory(); 
+  }
 
-  // Función base para insertar mensajes en la lista
-  void _addMessage(String text) {
-    final now = DateTime.now();
-    final timeString = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+  Future<void> _loadMessageHistory() async {
+    if (widget.chat.id.isEmpty) {
+      setState(() => _isLoadingHistory = false);
+      return;
+    }
 
-    setState(() {
-      _messages.add({
-        'text': text,
-        'time': timeString,
-        'isMe': true,
-      });
+    try {
+      final historicalMessages = await _apiService.getMensajesConversacion(widget.chat.id);
+      
+      if (mounted) {
+        setState(() {
+          _messages.clear(); 
+          final reversedList = historicalMessages.reversed.toList();
+
+          for (var msg in reversedList) {
+            String formattedTime = '';
+            if (msg['createdAt'] != null) {
+              try {
+                final parsedDate = DateTime.parse(msg['createdAt'].toString()).toLocal();
+                formattedTime = "${parsedDate.hour.toString().padLeft(2, '0')}:${parsedDate.minute.toString().padLeft(2, '0')}";
+              } catch (_) {}
+            }
+
+            _messages.add({
+              'text': msg['content'] ?? '',
+              'time': formattedTime.isNotEmpty ? formattedTime : _formatCurrentTime(),
+              // Comparamos directamente contra el widget.myUserId inyectado
+              'isMe': (msg['senderId'] ?? msg['sender_id'] ?? msg['sender']?['id'] ?? '')
+                  .toString().trim().toLowerCase() == widget.myUserId.trim().toLowerCase(),
+            });
+          }
+          _isLoadingHistory = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("🚨 Error cargando historial en la pantalla: $e");
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
+      }
+    }
+  }
+
+  void _initSocketListeners() {
+    final socket = _socketService.socket;
+    if (socket == null) return;
+
+    socket.off('new_message');
+    socket.off('message_sent');
+    socket.off('user_typing');
+    socket.off('user_stopped_typing');
+    socket.off('error'); // 👈 Limpiamos también el listener de error previo
+
+    // Escuchar mensajes entrantes de la otra persona
+    socket.on('new_message', (data) {
+      debugPrint("📥 [SOCKET] Nuevo mensaje recibido: $data");
+      
+      // 🟢 CONTROL DE SEGURIDAD: Validamos que pertenezca a este chat abierto
+      final String incomingConvId = (data['conversationId'] ?? data['chatId'] ?? '').toString();
+      if (incomingConvId != widget.chat.id) {
+        debugPrint("ℹ️ Mensaje ignorado en UI porque pertenece a otra conversación.");
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _messages.insert(0, {
+            'text': data['content'] ?? '', 
+            'time': _formatCurrentTime(),
+            'isMe': false, 
+          });
+        });
+      }
+    });
+
+    socket.on('message_sent', (data) {
+      debugPrint("⚡ [SOCKET] Confirmación de guardado en base de datos: $data");
+    });
+
+    socket.on('user_typing', (data) {
+      if (mounted) setState(() => _isOtherUserTyping = true);
+    });
+
+    socket.on('user_stopped_typing', (_) {
+      if (mounted) setState(() => _isOtherUserTyping = false);
+    });
+
+    // 🔴 DETECTOR DE ERRORES DEL BACKEND (Prisma/PostgreSQL)
+    socket.on('error', (data) {
+      debugPrint("🚨 [SOCKET ERROR DEL BACKEND]: $data");
+      
+      if (mounted) {
+        // Te mostrará una alerta visual abajo en la pantalla si el backend falla
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error del servidor: ${data['message'] ?? data.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     });
   }
 
-  // Envío desde la caja de texto
+  String _formatCurrentTime() {
+    final now = DateTime.now();
+    return "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+  }
+
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
-    _addMessage(text);
+
+    final socket = _socketService.socket;
+    final String finalReceiverId = widget.participantId ?? '';
+
+    if (finalReceiverId.isEmpty) {
+      debugPrint("🚨 [ERROR] No se puede enviar el mensaje porque participantId está vacío.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error interno: Falta el ID del destinatario.')),
+      );
+      return;
+    }
+
+    if (socket != null && socket.connected) {
+      final Map<String, dynamic> backendPayload = {
+        'receiverId': finalReceiverId, 
+        'content': text
+      };
+
+      debugPrint("🚀 [SOCKET EMIT] Enviando al Backend: $backendPayload");
+      socket.emit('send_message', backendPayload);
+      socket.emit('stop_typing', {'receiverId': finalReceiverId});
+      
+      if (mounted) {
+        setState(() {
+          _messages.insert(0, {
+            'text': text,
+            'time': _formatCurrentTime(),
+            'isMe': true,
+          });
+        });
+      }
+    } else {
+      debugPrint("🚨 [SOCKET] Desconectado. No se puede enviar.");
+    }
+
     _messageController.clear();
   }
 
-  // MOSTRAR MODAL DE CALIFICACIÓN
-  void _showRatingModal() {
-    int selectedStars = 5;
+  void _onTextChanged(String text) {
+    final socket = _socketService.socket;
+    final String finalReceiverId = widget.participantId ?? '';
+    if (socket == null || !socket.connected || finalReceiverId.isEmpty) return;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0F0F11),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Calificar Proyecto',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF18181C),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Landing Page Premium',
-                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Por ${widget.chat.name}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Tu calificación',
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(5, (index) {
-                      return GestureDetector(
-                        onTap: () {
-                          setModalState(() {
-                            selectedStars = index + 1;
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          child: Icon(
-                            Icons.star_rounded,
-                            size: 40,
-                            color: index < selectedStars ? const Color(0xFFFBBF24) : Colors.grey[800],
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Comentario (opcional)',
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF18181C),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey[900]!),
-                    ),
-                    child: const TextField(
-                      maxLines: 3,
-                      style: TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Comparte tu experiencia...',
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _addMessage('Proyecto aprobado! Excelente trabajo.');
-                      },
-                      child: const Text(
-                        'Enviar y Aprobar Proyecto',
-                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }, // Fin del StateSetter builder
-        ); // Fin del StatefulBuilder
-      }, // Fin del BottomSheet builder
-    );
+    if (text.isNotEmpty) {
+      socket.emit('typing', {'receiverId': finalReceiverId}); 
+    } else {
+      socket.emit('stop_typing', {'receiverId': finalReceiverId});
+    }
   }
 
   @override
   void dispose() {
+    _socketService.socket?.off('new_message');
+    _socketService.socket?.off('message_sent');
+    _socketService.socket?.off('user_typing');
+    _socketService.socket?.off('user_stopped_typing');
     _messageController.dispose();
     super.dispose();
   }
@@ -221,23 +228,23 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               radius: 18,
               backgroundColor: const Color(0xFF1C1C1E),
               child: Text(
-                widget.chat.avatarUrl,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                widget.chat.name.isNotEmpty ? widget.chat.name[0].toUpperCase() : '?', 
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)
               ),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.chat.name,
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const Text(
-                  'En línea',
-                  style: TextStyle(color: accentColor, fontSize: 12),
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.chat.name, 
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const Text('En línea', style: TextStyle(color: accentColor, fontSize: 12)),
+                ],
+              ),
             ),
           ],
         ),
@@ -245,60 +252,56 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                return _buildMessageBubble(msg['text'], msg['time'], msg['isMe'], accentColor, receiverColor);
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: InkWell(
-              onTap: _showRatingModal,
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: const Color(0xFF064E3B)),
-                  color: const Color(0xFF022C22).withValues(alpha: 0.3),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_circle_outline, color: accentColor, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Aprobar Proyecto',
-                      style: TextStyle(color: accentColor, fontWeight: FontWeight.bold, fontSize: 14),
+            child: _isLoadingHistory
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(accentColor),
                     ),
-                  ],
-                ),
+                  )
+                : _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.chat_bubble_outline, size: 48, color: Color(0xFF27272A)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Inicio de la conversación con ${widget.chat.name}',
+                              style: const TextStyle(color: Color(0xFF71717A), fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        reverse: true, 
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          return _buildMessageBubble(msg['text'], msg['time'], msg['isMe'], accentColor, receiverColor);
+                        },
+                      ),
+          ),
+          if (_isOtherUserTyping)
+            const Padding(
+              padding: EdgeInsets.only(left: 20, bottom: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Escribiendo...', style: TextStyle(color: accentColor, fontSize: 12, fontStyle: FontStyle.italic)),
               ),
             ),
-          ),
           Padding(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 8,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-            ),
+            padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
             child: Row(
               children: [
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1C1C1E),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                    decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(30)),
                     child: TextField(
                       controller: _messageController,
+                      onChanged: _onTextChanged,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         hintText: 'Escribe un mensaje...',
@@ -314,10 +317,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   onTap: _sendMessage,
                   child: Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(
-                      color: accentColor,
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: const BoxDecoration(color: accentColor, shape: BoxShape.circle),
                     child: const Icon(Icons.send_rounded, color: Colors.black, size: 24),
                   ),
                 ),
@@ -336,9 +336,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: isMe ? accentColor : receiverColor,
@@ -349,20 +347,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 bottomRight: Radius.circular(isMe ? 0 : 20),
               ),
             ),
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isMe ? Colors.black : Colors.white,
-                fontSize: 15,
-                height: 1.3,
-              ),
-            ),
+            child: Text(text, style: TextStyle(color: isMe ? Colors.black : Colors.white, fontSize: 15, height: 1.3)),
           ),
           const SizedBox(height: 4),
-          Text(
-            time,
-            style: const TextStyle(color: Colors.grey, fontSize: 11),
-          ),
+          Text(time, style: const TextStyle(color: Colors.grey, fontSize: 11)),
           const SizedBox(height: 16),
         ],
       ),

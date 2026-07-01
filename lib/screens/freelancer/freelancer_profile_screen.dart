@@ -1,601 +1,635 @@
-// lib/screens/freelancer/freelancer_profile_screen.dart
 import 'package:flutter/material.dart';
-import 'freelancer_edit_profile_screen.dart';
-import 'freelancer_portfolio_screen.dart'; 
-import 'freelancer_settings_screen.dart'; 
-import 'freelancer_notifications_screen.dart'; // 🚀 ¡IMPORTACIÓN AGREGADA! Vinculamos la pantalla de notificaciones
+import 'package:devmarket_app/data/services/api_service.dart'; 
+import 'package:devmarket_app/widgets/custom_header.dart'; // 🚀 IMPORTACIÓN DEL HEADER
 
 class FreelancerProfileScreen extends StatefulWidget {
-  final bool isFreelancer;
-  final ValueChanged<bool> onRoleChanged;
-
-  const FreelancerProfileScreen({
-    super.key,
-    required this.isFreelancer,
-    required this.onRoleChanged,
-  });
+  const FreelancerProfileScreen({super.key});
 
   @override
   State<FreelancerProfileScreen> createState() => _FreelancerProfileScreenState();
 }
 
 class _FreelancerProfileScreenState extends State<FreelancerProfileScreen> {
-  // Paleta de colores exacta de tus capturas
-  static const bgDark = Color(0xFF080808);
-  static const cardColor = Color(0xFF121214);
-  static const accentColor = Color(0xFF10B981);
+  final ApiService _apiService = ApiService();
+
+  // 🚀 PALETA DE COLORES
+  static const bgDark = Color(0xFF0C0C0E);
+  static const cardDark = Color(0xFF121214);
+  static const inputBg = Color(0xFF0A0A0A);
+  static const accentGreen = Color(0xFF00E676);
   static const textMuted = Color(0xFF71717A);
-  static const borderDark = Color(0xFF1C1C1E);
-  static const errorRed = Color(0xFFEF4444);
+  static const borderDark = Color(0xFF27272A);
 
-  // 🛠️ Variables de estado reactivas (Vinculadas con la pantalla de edición)
-  String _nombre = "María López";
-  String _email = "maria.dev@email.com";
-  String _telefono = "+51 987 654 321";
-  String _titulo = "Top Rated Freelancer";
-  String _skills = "Flutter, Dart, UI/UX";
+  // 🚀 TABS
+  String _activeTab = 'profesional';
 
-  // Balance disponible mutable
-  double _balanceDisponible = 18675.0;
+  // 🚀 CONTROL DE ESTADOS DE RED
+  bool _isLoading = true;
+  bool _isSaving = false;
+  String? _error;
+  String? _successMsg;
+
+  // Campos del Perfil (Se llenan dinámicamente desde la BD)
+  String _name = "";
+  String _email = "";
+  String _professionalTitle = "";
+  String _location = "";
+  String _hourlyRate = "";
+  String _bio = "";
+  String _yearsOfExperience = "";
+  String _portfolioUrl = "";
+  String? _avatarUrl; 
+  String _provider = "EMAIL"; 
+
+  // Listas dinámicas vinculadas
+  List<Map<String, String>> _languages = []; 
+  List<String> _skills = [];
+  List<String> _education = [];
+
+  // Inputs para agregar elementos dinámicos
+  String _selectedLangName = 'Español';
+  String _selectedLangLevel = 'BÁSICO';
+  final TextEditingController _skillController = TextEditingController();
+  final TextEditingController _eduController = TextEditingController();
+
+  // 🚀 ESTADOS PARA CONTRASEÑAS (Pestaña Seguridad)
+  final TextEditingController _currentPassCtrl = TextEditingController();
+  final TextEditingController _newPassCtrl = TextEditingController();
+  final TextEditingController _confirmPassCtrl = TextEditingController();
+  bool _showCurrentPass = false;
+  bool _showNewPass = false;
+  bool _showConfirmPass = false;
+  
+  String? _passError;
+  String? _passSuccess;
+  bool _passLoading = false;
+
+  // Listas de opciones estáticas
+  final List<String> _availableLanguages = ['Español', 'Inglés', 'Portugués', 'Alemán', 'Francés', 'Italiano', 'Chino', 'Japonés'];
+  final List<String> _allowedLevels = ['BÁSICO', 'INTERMEDIO', 'AVANZADO', 'NATIVO'];
+  final List<String> _countries = ['Perú', 'Colombia', 'México', 'Argentina', 'Chile', 'Ecuador', 'España', 'Estados Unidos'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData(); // 🔄 Llamada automática al cargar la pantalla
+  }
+
+  @override
+  void dispose() {
+    _skillController.dispose();
+    _eduController.dispose();
+    _currentPassCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmPassCtrl.dispose();
+    super.dispose();
+  }
+
+  // 🟢 1. CARGAR DATOS REALES DE LA BASE DE DATOS
+  Future<void> _loadProfileData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final profile = await _apiService.getUserProfile();
+
+      if (profile != null) {
+        setState(() {
+          final userData = profile['data'] ?? profile;
+
+          _name = userData['name'] ?? userData['username'] ?? 'Usuario';
+          _email = userData['email'] ?? '';
+          _professionalTitle = userData['professionalTitle'] ?? '';
+          _location = _countries.contains(userData['location']) ? userData['location'] : '';
+          _hourlyRate = userData['hourlyRate'] != null ? userData['hourlyRate'].toString() : ''; 
+          _yearsOfExperience = userData['yearsOfExperience'] != null ? userData['yearsOfExperience'].toString() : '';
+          _portfolioUrl = userData['portfolioUrl'] ?? '';
+          _bio = userData['bio'] ?? '';
+          _avatarUrl = userData['avatar']; // 🚀 CORREGIDO: Mapeado con la propiedad 'avatar' de tu Prisma
+          _provider = userData['provider'] ?? 'EMAIL';
+
+          // Mapeo seguro de arreglos / listas dinámicas procedentes de tu ORM/BD
+          if (userData['skills'] != null) {
+            _skills = List<String>.from(userData['skills']);
+          } else {
+            _skills = [];
+          }
+          if (userData['education'] != null) {
+            _education = List<String>.from(userData['education']);
+          } else {
+            _education = [];
+          }
+          if (userData['languages'] != null) {
+            _languages = (userData['languages'] as List).map((item) {
+              return {
+                'name': (item['name'] ?? '').toString(),
+                'level': (item['level'] ?? 'BÁSICO').toString().toUpperCase(), // 🚀 Sincronizado con Zod Enum
+              };
+            }).toList();
+          } else {
+            _languages = [];
+          }
+        });
+      } else {
+        setState(() => _error = "No se pudo obtener la información del perfil.");
+      }
+    } catch (e) {
+      setState(() => _error = "Error de conexión: $e");
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 🟢 2. ENVIAR CAMBIOS REALES DEL PERFIL A LA BD
+  Future<void> _handleSave() async {
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _successMsg = null;
+    });
+
+    final double? parsedRate = double.tryParse(_hourlyRate);
+    final int? parsedExp = int.tryParse(_yearsOfExperience);
+
+    // Estructuramos el JSON limpiando campos vacíos para no romper las validaciones estrictas de Zod
+    final Map<String, dynamic> updateData = {
+      "name": _name,
+      "professionalTitle": _professionalTitle.isEmpty ? null : _professionalTitle,
+      "location": _location.isEmpty ? null : _location,
+      "rateType": "HOURLY", // Requerido por tu enum de Zod
+      "hourlyRate": (parsedRate != null && parsedRate > 0) ? parsedRate : null, 
+      "yearsOfExperience": (parsedExp != null && parsedExp >= 0) ? parsedExp : null,
+      "portfolioUrl": _portfolioUrl.isEmpty ? null : _portfolioUrl,
+      "bio": _bio.isEmpty ? null : _bio,
+      "skills": _skills,
+      "education": _education,
+      "languages": _languages.map((l) => {
+        "name": l['name'],
+        "level": l['level']!.toUpperCase() // Sincronizado con las opciones de Zod
+      }).toList(),
+    };
+
+    final bool success = await _apiService.updateUserProfile(updateData);
+
+    if (mounted) {
+      setState(() {
+        _isSaving = false;
+        if (success) {
+          _successMsg = "Perfil actualizado con éxito en la BD.";
+        } else {
+          _error = "Error al guardar: Verifica que los formatos de datos cumplan con las reglas de Zod.";
+        }
+      });
+    }
+  }
+
+  // 🟢 3. CAMBIO REAL DE CONTRASEÑA EN LA BD
+  Future<void> _handlePasswordSave() async {
+    setState(() {
+      _passError = null;
+      _passSuccess = null;
+    });
+
+    if (_currentPassCtrl.text.isEmpty || _newPassCtrl.text.isEmpty || _confirmPassCtrl.text.isEmpty) {
+      setState(() => _passError = 'Todos los campos son obligatorios.');
+      return;
+    }
+    if (_newPassCtrl.text.length < 8) {
+      setState(() => _passError = 'La nueva contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (_newPassCtrl.text != _confirmPassCtrl.text) {
+      setState(() => _passError = 'Las contraseñas nuevas no coinciden.');
+      return;
+    }
+
+    setState(() => _passLoading = true);
+
+    final bool success = await _apiService.updatePassword(
+      _currentPassCtrl.text,
+      _newPassCtrl.text,
+    );
+
+    if (mounted) {
+      setState(() {
+        _passLoading = false;
+        if (success) {
+          _passSuccess = 'Contraseña actualizada con éxito.';
+          _currentPassCtrl.clear();
+          _newPassCtrl.clear();
+          _confirmPassCtrl.clear();
+        } else {
+          _passError = 'Contraseña actual incorrecta o error de servidor.';
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: bgDark,
+        body: Center(child: CircularProgressIndicator(color: accentGreen)),
+      );
+    }
+
+    final bool isGoogleAccount = _provider.toUpperCase() == "GOOGLE";
+
     return Scaffold(
       backgroundColor: bgDark,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // ==========================================
-              // HEADER CON SWITCH DE ROL
-              // ==========================================
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
+        child: RefreshIndicator(
+          color: accentGreen,
+          backgroundColor: cardDark,
+          onRefresh: _loadProfileData, // Permite arrastrar hacia abajo para recargar
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 🚀 INTEGRACIÓN DEL CUSTOM HEADER REQUERIDO
+                const CustomHeader(
+                  title: 'Mi Perfil',
+                  subtitle: 'Gestiona tu identidad y habilidades',
+                ),
+                const SizedBox(height: 16),
+
+                // Avatar y Cabecera de Datos Básicos
+                Center(
+                  child: Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: accentColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Text(
-                          'DM',
-                          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                        ),
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: borderDark,
+                        backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty 
+                            ? NetworkImage(_avatarUrl!) 
+                            : null,
+                        child: _avatarUrl == null || _avatarUrl!.isEmpty
+                            ? const Icon(Icons.person, size: 50, color: Colors.white) 
+                            : null,
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'DevMarket',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
+                      const SizedBox(height: 12),
+                      Text(_name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                      Text(_email, style: const TextStyle(color: textMuted, fontSize: 14)),
                     ],
                   ),
-                  Row(
-                    children: [
-                      Text('Cliente', style: TextStyle(color: widget.isFreelancer ? Colors.grey : accentColor, fontSize: 12)),
-                      Switch(
-                        value: widget.isFreelancer,
-                        activeThumbColor: accentColor,
-                        activeTrackColor: accentColor.withAlpha((0.3 * 255).round()),
-                        onChanged: widget.onRoleChanged,
-                      ),
-                      Text('Freelancer', style: TextStyle(color: widget.isFreelancer ? accentColor : Colors.grey, fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
+                ),
+                const SizedBox(height: 24),
 
-              // ==========================================
-              // TARJETA DE PERFIL (Dinamizada con las variables)
-              // ==========================================
-              CircleAvatar(
-                radius: 50,
-                backgroundColor: borderDark,
-                child: ClipOval(
-                  child: Image.network(
-                    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=200&auto=format&fit=crop',
-                    fit: BoxFit.cover,
-                    width: 100,
-                    height: 100,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _nombre, 
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _email, 
-                style: const TextStyle(color: textMuted, fontSize: 14),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF062F22),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _titulo, 
-                  style: const TextStyle(color: accentColor, fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // ==========================================
-              // SECCIÓN: ESTADÍSTICAS
-              // ==========================================
-              Align(
-                alignment: Alignment.centerLeft,
-                child: const Text(
-                  'Estadísticas',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Row(
+                // Tabs Nav
+                Row(
                   children: [
-                    _buildStatItem('48', 'Proyectos'),
-                    Container(width: 1, height: 40, color: borderDark),
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => _showRetirarFondosModal(context),
-                        child: Column(
-                          children: [
-                            Text(
-                              '\$${(_balanceDisponible / 1000).toStringAsFixed(1)}K',
-                              style: const TextStyle(color: accentColor, fontSize: 22, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text('Ganado', style: TextStyle(color: textMuted, fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Container(width: 1, height: 40, color: borderDark),
-                    _buildStatItem('5.0', 'Rating'),
+                    _buildTabButton('profesional', 'Profesional'),
+                    _buildTabButton('habilidades', 'Habilidades'),
+                    _buildTabButton('seguridad', 'Seguridad'),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              // ==========================================
-              // LISTA DE OPCIONES DE CONFIGURACIÓN
-              // ==========================================
-              _buildMenuButton(
-                Icons.person_outline_rounded, 
-                'Editar Perfil',
-                onTap: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => FreelancerEditProfileScreen(
-                        currentName: _nombre,
-                        currentEmail: _email,
-                        currentPhone: _telefono,
-                        currentTitle: _titulo,
-                        currentSkills: _skills,
-                      ),
-                    ),
-                  );
+                if (_error != null) _buildStatusMessage(_error!, isError: true),
+                if (_successMsg != null) _buildStatusMessage(_successMsg!, isError: false),
 
-                  if (result != null && result is Map<String, String>) {
-                    setState(() {
-                      _nombre = result['name']!;
-                      _email = result['email']!;
-                      _telefono = result['phone']!;
-                      _titulo = result['title']!;
-                      _skills = result['skills']!;
-                    });
-                  }
-                },
-              ),
-              
-              _buildMenuButton(
-                Icons.folder_open_rounded, 
-                'Portfolio',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const FreelancerPortfolioScreen(),
-                    ),
-                  );
-                },
-              ),
-              
-              _buildMenuButton(
-                Icons.settings_outlined, 
-                'Configuración', 
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const FreelancerSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-
-              // 🚀 ¡SOLUCIÓN! Botón actualizado para abrir la pantalla de Notificaciones
-              _buildMenuButton(
-                Icons.notifications_none_rounded, 
-                'Notificaciones',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const FreelancerNotificationsScreen(),
-                    ),
-                  );
-                },
-              ),
-              
-              _buildMenuButton(
-                Icons.logout_rounded, 
-                'Cerrar Sesión', 
-                color: errorRed,
-                showArrow: false,
-              ),
-            ],
+                // Renderizado según pestaña activa
+                if (_activeTab == 'profesional') _buildProfesionalTab(),
+                if (_activeTab == 'habilidades') _buildHabilidadesTab(),
+                if (_activeTab == 'seguridad') _buildSeguridadTab(isGoogleAccount),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStatItem(String value, String label) {
+  Widget _buildTabButton(String tabKey, String label) {
+    final bool isActive = _activeTab == tabKey;
     return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+      child: GestureDetector(
+        onTap: () => setState(() => _activeTab = tabKey),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isActive ? accentGreen : borderDark,
+                width: isActive ? 2 : 1,
+              ),
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: textMuted, fontSize: 13)),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isActive ? Colors.white : textMuted,
+              fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfesionalTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTextField('Título Profesional', initialValue: _professionalTitle, onChanged: (v) => _professionalTitle = v),
+        _buildDropdownField('Ubicación / País', _location, _countries, (v) => setState(() => _location = v ?? '')),
+        _buildTextField('Tarifa por Hora (USD)', initialValue: _hourlyRate, keyboardType: TextInputType.number, onChanged: (v) => _hourlyRate = v),
+        _buildTextField('Años de Experiencia', initialValue: _yearsOfExperience, keyboardType: TextInputType.number, onChanged: (v) => _yearsOfExperience = v),
+        _buildTextField('URL de Portafolio', initialValue: _portfolioUrl, onChanged: (v) => _portfolioUrl = v),
+        _buildTextField('Biografía', initialValue: _bio, maxLines: 4, onChanged: (v) => _bio = v),
+        const SizedBox(height: 24),
+        _buildSaveButton(onPressed: _handleSave, isLoading: _isSaving),
+      ],
+    );
+  }
+
+  Widget _buildHabilidadesTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // --- HABILIDADES ---
+        const Text('Habilidades', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _buildSimpleInputField(_skillController, 'Ej. Flutter, Node.js')),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.add_box_rounded, color: accentGreen, size: 40),
+              onPressed: () {
+                if (_skillController.text.isNotEmpty) {
+                  setState(() {
+                    _skills.add(_skillController.text.trim());
+                    _skillController.clear();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: _skills.map((skill) => Chip(
+            backgroundColor: cardDark,
+            side: const BorderSide(color: borderDark),
+            label: Text(skill, style: const TextStyle(color: Colors.white)),
+            deleteIcon: const Icon(Icons.close, size: 14, color: Colors.red),
+            onDeleted: () => setState(() => _skills.remove(skill)),
+          )).toList(),
+        ),
+        const SizedBox(height: 24),
+
+        // --- IDIOMAS ---
+        const Text('Idiomas', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedLangName,
+                dropdownColor: cardDark,
+                style: const TextStyle(color: Colors.white),
+                items: _availableLanguages.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+                onChanged: (v) => setState(() => _selectedLangName = v ?? 'Español'),
+                decoration: InputDecoration(filled: true, fillColor: inputBg, enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark))),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedLangLevel,
+                dropdownColor: cardDark,
+                style: const TextStyle(color: Colors.white),
+                items: _allowedLevels.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+                onChanged: (v) => setState(() => _selectedLangLevel = v ?? 'BÁSICO'),
+                decoration: InputDecoration(filled: true, fillColor: inputBg, enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark))),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_box_rounded, color: accentGreen, size: 40),
+              onPressed: () {
+                setState(() {
+                  // Validamos duplicados locales simples
+                  _languages.removeWhere((l) => l['name'] == _selectedLangName);
+                  _languages.add({'name': _selectedLangName, 'level': _selectedLangLevel});
+                });
+              },
+            )
+          ],
+        ),
+        const SizedBox(height: 8),
+        ..._languages.map((lang) => Card(
+          color: cardDark,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: borderDark)),
+          child: ListTile(
+            title: Text(lang['name'] ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: Text(lang['level'] ?? '', style: const TextStyle(color: textMuted)),
+            trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: () => setState(() => _languages.remove(lang))),
+          ),
+        )),
+        const SizedBox(height: 24),
+
+        // --- EDUCACIÓN ---
+        const Text('Educación', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _buildSimpleInputField(_eduController, 'Ej. Ingeniería de Sistemas - Univ. XYZ')),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.add_box_rounded, color: accentGreen, size: 40),
+              onPressed: () {
+                if (_eduController.text.isNotEmpty) {
+                  setState(() {
+                    _education.add(_eduController.text.trim());
+                    _eduController.clear();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ..._education.map((edu) => Card(
+          color: cardDark,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: borderDark)),
+          child: ListTile(
+            title: Text(edu, style: const TextStyle(color: Colors.white)),
+            trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: () => setState(() => _education.remove(edu))),
+          ),
+        )),
+        const SizedBox(height: 24),
+        _buildSaveButton(onPressed: _handleSave, isLoading: _isSaving),
+      ],
+    );
+  }
+
+  Widget _buildSeguridadTab(bool isGoogleAccount) {
+    if (isGoogleAccount) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: cardDark, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderDark)),
+        child: const Row(
+          children: [
+            Icon(Icons.g_mobiledata, color: Colors.red, size: 32),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Tu cuenta está vinculada a Google. La gestión de contraseñas se realiza directamente en tu proveedor de identidad.',
+                style: TextStyle(color: textMuted, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_passError != null) _buildStatusMessage(_passError!, isError: true),
+        if (_passSuccess != null) _buildStatusMessage(_passSuccess!, isError: false),
+        _buildPasswordField('Contraseña Actual', _currentPassCtrl, _showCurrentPass, () => setState(() => _showCurrentPass = !_showCurrentPass)),
+        _buildPasswordField('Nueva Contraseña', _newPassCtrl, _showNewPass, () => setState(() => _showNewPass = !_showNewPass)),
+        _buildPasswordField('Confirmar Nueva Contraseña', _confirmPassCtrl, _showConfirmPass, () => setState(() => _showConfirmPass = !_showConfirmPass)),
+        const SizedBox(height: 24),
+        _buildSaveButton(onPressed: _handlePasswordSave, isLoading: _passLoading, text: 'Actualizar Contraseña'),
+      ],
+    );
+  }
+
+  Widget _buildTextField(String label, {required String initialValue, required Function(String) onChanged, int maxLines = 1, TextInputType keyboardType = TextInputType.text}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 6),
+          TextFormField(
+            key: Key(initialValue), // 🔑 Sincroniza dinámicamente el valor en refrescos o guardados exitosos
+            initialValue: initialValue,
+            maxLines: maxLines,
+            keyboardType: keyboardType,
+            style: const TextStyle(color: Colors.white),
+            onChanged: onChanged,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: inputBg,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: accentGreen)),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildMenuButton(IconData icon, String title, {Color color = Colors.white, bool showArrow = true, VoidCallback? onTap}) {
+  Widget _buildDropdownField(String label, String value, List<String> items, Function(String?) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: value.isEmpty ? null : value,
+            dropdownColor: cardDark,
+            style: const TextStyle(color: Colors.white),
+            onChanged: onChanged,
+            items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: inputBg,
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: accentGreen)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPasswordField(String label, TextEditingController ctrl, bool show, VoidCallback toggle) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: ctrl,
+            obscureText: !show,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: inputBg,
+              suffixIcon: IconButton(icon: Icon(show ? Icons.visibility : Icons.visibility_off, color: textMuted), onPressed: toggle),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: accentGreen)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimpleInputField(TextEditingController ctrl, String hint) {
+    return TextFormField(
+      controller: ctrl,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: textMuted),
+        filled: true,
+        fillColor: inputBg,
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borderDark)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: accentGreen)),
+      ),
+    );
+  }
+
+  Widget _buildStatusMessage(String message, {required bool isError}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderDark.withAlpha(128)), 
+        color: isError ? Colors.red.withAlpha(25) : accentGreen.withAlpha(25),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isError ? Colors.red : accentGreen),
       ),
-      child: ListTile(
-        onTap: onTap ?? () {},
-        dense: true,
-        leading: Icon(icon, color: color, size: 22),
-        title: Text(
-          title,
-          style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w600),
-        ),
-        trailing: showArrow ? const Icon(Icons.arrow_forward_ios_rounded, color: textMuted, size: 14) : null,
-      ),
+      child: Text(message, style: TextStyle(color: isError ? Colors.red : accentGreen, fontSize: 14)),
     );
   }
 
-  // =========================================================================
-  // MODAL 1: RETIRAR FONDOS (Se mantiene intacto y accesible desde "Ganado")
-  // =========================================================================
-  void _showRetirarFondosModal(BuildContext context) {
-    String selectedMethod = 'transferencia';
-    bool isProcessing = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F0F11),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(28),
-                  topRight: Radius.circular(28),
-                ),
-              ),
-              padding: EdgeInsets.only(
-                left: 20, 
-                right: 20, 
-                top: 24, 
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Retirar Fondos',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(Icons.close_rounded, color: textMuted),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Balance disponible', style: TextStyle(color: textMuted, fontSize: 13)),
-                        const SizedBox(height: 6),
-                        Text(
-                          '\$${_balanceDisponible.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}',
-                          style: const TextStyle(color: accentColor, fontSize: 28, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text('Cantidad a retirar', style: TextStyle(color: textMuted, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: const TextField(
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                      decoration: InputDecoration(
-                        prefixText: '\$ ',
-                        prefixStyle: TextStyle(color: textMuted, fontSize: 18),
-                        hintText: '1000',
-                        hintStyle: TextStyle(color: textMuted),
-                        border: InputBorder.none,
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: ['\$100', '\$500', '\$1000', 'Todo'].map((amount) {
-                      return Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: cardColor,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Center(
-                            child: Text(
-                              amount,
-                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text('Método de pago', style: TextStyle(color: textMuted, fontSize: 14)),
-                  const SizedBox(height: 12),
-                  _buildPaymentMethodTile(
-                    methodKey: 'transferencia',
-                    currentSelected: selectedMethod,
-                    icon: Icons.credit_card_rounded,
-                    title: 'Transferencia Bancaria',
-                    subtitle: '2-3 días',
-                    onTap: () => setModalState(() => selectedMethod = 'transferencia'),
-                  ),
-                  _buildPaymentMethodTile(
-                    methodKey: 'paypal',
-                    currentSelected: selectedMethod,
-                    icon: Icons.account_balance_wallet_rounded,
-                    title: 'PayPal',
-                    subtitle: 'Instantáneo',
-                    onTap: () => setModalState(() => selectedMethod = 'paypal'),
-                  ),
-                  _buildPaymentMethodTile(
-                    methodKey: 'crypto',
-                    currentSelected: selectedMethod,
-                    icon: Icons.currency_bitcoin_rounded,
-                    title: 'Criptomoneda',
-                    subtitle: '10-30 min',
-                    onTap: () => setModalState(() => selectedMethod = 'crypto'),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: isProcessing 
-                        ? null 
-                        : () async {
-                            setModalState(() => isProcessing = true);
-                            
-                            await Future.delayed(const Duration(seconds: 2));
-                            
-                            if (!context.mounted) return;
-                            Navigator.pop(context); 
-                            _showRetiroExitosoModal(context);
-                          },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accentColor, 
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: isProcessing
-                        ? const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
-                              ),
-                              SizedBox(width: 12),
-                              Text('Procesando...', style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold)),
-                            ],
-                          )
-                        : const Text(
-                            'Procesar Retiro',
-                            style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold),
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildPaymentMethodTile({
-    required String methodKey,
-    required String currentSelected,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    final bool isSelected = methodKey == currentSelected;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF091F18) : cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? accentColor : borderDark,
-            width: isSelected ? 1.5 : 1,
-          ),
+  Widget _buildSaveButton({required VoidCallback onPressed, required bool isLoading, String text = 'Guardar Cambios'}) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: accentGreen,
+          disabledBackgroundColor: accentGreen.withAlpha(100),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        child: Row(
-          children: [
-            Icon(icon, color: isSelected ? accentColor : textMuted, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(color: textMuted, fontSize: 12)),
-                ],
-              ),
-            ),
-            Icon(
-              isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
-              color: isSelected ? accentColor : textMuted,
-              size: 22,
-            ),
-          ],
-        ),
+        child: isLoading 
+          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: bgDark, strokeWidth: 2))
+          : Text(text, style: const TextStyle(color: bgDark, fontWeight: FontWeight.bold, fontSize: 15)),
       ),
-    );
-  }
-
-  // =========================================================================
-  // MODAL 2: RETIRO PROCESADO EXITOSAMENTE
-  // =========================================================================
-  void _showRetiroExitosoModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F0F11),
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(28),
-              topRight: Radius.circular(28),
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF0A291E),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_circle_rounded, color: accentColor, size: 40), 
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                '¡Retiro Procesado!',
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Tu retiro está en camino. Recibirás una confirmation por email.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: textMuted, fontSize: 15, height: 1.4),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _balanceDisponible -= 1000; 
-                    });
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accentColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Entendido',
-                    style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
